@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IMO 2025 P2 — ULTIMATE PROOF ENGINE</title>
+<style>
+  :root{
+    --bg:#030508;
+    --panel:rgba(0,0,0,.85);
+    --text:#b9ffe5;
+    --muted:#7fdac0;
+    --cyan:#00f0ff;
+    --mag:#ff3cff;
+    --gold:#ffd34d;
+    --lime:#22ff88;
+    --rose:#ff4f7c;
+    --white:#ffffff;
+    --tangent:#ffe800;
+    --bad:#ff6b6b;
+    --ok:#3dff9b;
+    --vio:#aa46ff;
+    --trace:rgba(0,243,255,0.02);
+    --trace-pt:rgba(255,204,0,0.04);
+  }
+  html,body{height:100%; margin:0; background:var(--bg); color:var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    overflow:hidden;
+  }
+  #traceCanvas, #mainCanvas{position:fixed; inset:0;}
+  #ui{
+    position:fixed; right:18px; top:18px; width:min(420px, calc(100vw - 36px));
+    background:var(--panel); border:1px solid rgba(185,255,229,.35);
+    box-shadow:0 0 50px rgba(0,240,255,.12);
+    padding:16px; border-radius:12px;
+    backdrop-filter: blur(8px);
+  }
+  #title{font-size:14px; letter-spacing:1.4px; margin-bottom:10px; color:var(--cyan); font-weight:bold;}
+  #status{font-size:11.5px; line-height:1.5; white-space:pre-wrap; max-height:340px; overflow-y:auto;}
+  
+  #controls{
+    position:fixed; left:18px; bottom:18px; width:min(900px, calc(100vw - 36px));
+    background:var(--panel); border:1px solid rgba(185,255,229,.35);
+    box-shadow:0 0 50px rgba(255,60,255,.08);
+    padding:14px; border-radius:12px;
+    display:grid; gap:10px;
+  }
+  
+  #stats{
+    position:fixed; left:18px; top:18px;
+    background:var(--panel); border:1px solid rgba(255,204,0,.5);
+    box-shadow:0 0 40px rgba(255,204,0,.15);
+    padding:12px 16px; border-radius:12px;
+    backdrop-filter: blur(8px);
+    min-width:260px;
+  }
+  #stats .label{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px;}
+  #stats .value{font-size:22px; color:var(--gold); font-weight:bold; margin:4px 0 10px 0;}
+  #stats .mini{font-size:11px; color:rgba(185,255,229,.75); margin-top:4px;}
+  
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .btn{
+    background:transparent; color:var(--text); border:1px solid rgba(185,255,229,.5);
+    padding:8px 12px; border-radius:10px; cursor:pointer; font-size:12px;
+    transition:.15s;
+    user-select:none;
+  }
+  .btn:hover{background:rgba(185,255,229,.15)}
+  .btn.on{border-color:rgba(0,240,255,.95); box-shadow:0 0 20px rgba(0,240,255,.12) inset;}
+  .btn.danger{border-color:rgba(255,107,107,.6); color:#ff6b6b;}
+  .btn.danger:hover{background:rgba(255,107,107,.15)}
+  
+  label{font-size:12px; color:var(--muted);}
+  input[type="range"]{width:180px;}
+  .tiny{font-size:11px; color:rgba(185,255,229,.7)}
+  .kbd{border:1px solid rgba(185,255,229,.25); padding:2px 6px; border-radius:6px; font-size:10px;}
+  
+  .meter{
+    width:100%; height:8px; background:rgba(255,255,255,.1); border-radius:4px; overflow:hidden; margin:6px 0;
+  }
+  .meter-fill{
+    height:100%; transition:width .3s ease; border-radius:4px;
+    background:linear-gradient(90deg, #ff6b6b 0%, #ffd34d 50%, #3dff9b 100%);
+  }
+</style>
+</head>
+<body>
+<canvas id="traceCanvas"></canvas>
+<canvas id="mainCanvas"></canvas>
+
+<div id="stats">
+  <div class="label">PROOF SAMPLES</div>
+  <div class="value" id="sampleCount">0</div>
+  <div class="label">CONFIDENCE</div>
+  <div class="meter"><div class="meter-fill" id="confidenceMeter" style="width:0%"></div></div>
+  <div class="mini" id="confidenceText">No samples yet</div>
+  <div class="mini" style="margin-top:10px; opacity:0.6">TRACE: <span id="traceStatus">OFF</span></div>
+</div>
+
+<div id="ui">
+  <div id="title">◢ IMO 2025 P2 ◣ ULTIMATE PROOF ENGINE</div>
+  <div id="status"></div>
+</div>
+
+<div id="controls">
+  <div class="row">
+    <button class="btn" id="dragBtn">Drag: OFF</button>
+    <button class="btn" id="traceBtn">Trace: OFF</button>
+    <button class="btn" id="autoSweepBtn">Auto-Sweep: OFF</button>
+    <button class="btn danger" id="clearTraceBtn">Clear Trace</button>
+    <button class="btn" id="exportBtn">Export Data (CSV)</button>
+    <button class="btn" id="resetBtn">Reset All</button>
+  </div>
+
+  <div class="row">
+    <label>r(Ω)</label><input id="rO" type="range" min="50" max="280" step="1">
+    <span id="rOVal" class="tiny"></span>
+
+    <label style="margin-left:10px;">r(Γ)</label><input id="rG" type="range" min="70" max="380" step="1">
+    <span id="rGVal" class="tiny"></span>
+
+    <label style="margin-left:10px;">Tolerance</label><input id="tol" type="range" min="1" max="150" step="1">
+    <span id="tolVal" class="tiny"></span>
+  </div>
+
+  <div class="row">
+    <label>Layers</label>
+    <button class="btn on" id="layerBase">Base</button>
+    <button class="btn on" id="layerP">P</button>
+    <button class="btn on" id="layerEF">E/F</button>
+    <button class="btn on" id="layerH">H + ∥</button>
+    <button class="btn on" id="layerCirc">circ(BEF)</button>
+    <button class="btn on" id="layerDiag">Diagnostics</button>
+  </div>
+  
+  <div class="row">
+    <span class="tiny">
+      <span class="kbd">D</span> drag • 
+      <span class="kbd">T</span> trace • 
+      <span class="kbd">A</span> auto-sweep • 
+      <span class="kbd">R</span> reset • 
+      <span class="kbd">Space</span> clear trace
+    </span>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ============================================================================
+  // GEOMETRY CORE (exact construction)
+  // ============================================================================
+  const EPS = 1e-9;
+  const v = (x,y)=>({x,y});
+  const add=(a,b)=>v(a.x+b.x,a.y+b.y);
+  const sub=(a,b)=>v(a.x-b.x,a.y-b.y);
+  const mul=(a,k)=>v(a.x*k,a.y*k);
+  const dot=(a,b)=>a.x*b.x+a.y*b.y;
+  const cross=(a,b)=>a.x*b.y-a.y*b.x;
+  const norm2=a=>dot(a,a);
+  const norm=a=>Math.hypot(a.x,a.y);
+  const unit=a=>{ const n=norm(a); return n<EPS ? v(0,0) : v(a.x/n,a.y/n); };
+  const perp=a=>v(-a.y,a.x);
+
+  function lineFromPoints(p,q){ return {p, d: sub(q,p)}; }
+
+  function intersectLines(L1, L2){
+    const den = cross(L1.d, L2.d);
+    if (Math.abs(den) < EPS) return null;
+    const t = cross(sub(L2.p, L1.p), L2.d) / den;
+    return add(L1.p, mul(L1.d, t));
+  }
+
+  function projectPointToLine(pt, L){
+    const t = dot(sub(pt, L.p), L.d) / Math.max(EPS, norm2(L.d));
+    return {t, foot: add(L.p, mul(L.d, t))};
+  }
+
+  function circleCircleIntersections(O, r, P, R){
+    const OP = sub(P,O);
+    const d = norm(OP);
+    if (d < EPS || d > r + R + 1e-9 || d < Math.abs(r - R) - 1e-9) return [];
+    const a = (r*r - R*R + d*d) / (2*d);
+    const h2 = r*r - a*a;
+    const u = mul(OP, 1/d);
+    const base = add(O, mul(u, a));
+    if (h2 <= 0) return [base];
+    const h = Math.sqrt(h2);
+    const w = mul(perp(u), h);
+    return [ add(base, w), sub(base, w) ];
+  }
+
+  function lineCircleIntersections(L, O, r){
+    const p = sub(L.p, O);
+    const d = L.d;
+    const A = dot(d,d);
+    const B = 2*dot(p,d);
+    const C = dot(p,p) - r*r;
+    const disc = B*B - 4*A*C;
+    if (disc < -1e-10) return [];
+    if (Math.abs(disc) <= 1e-10) return [ add(L.p, mul(d, -B/(2*A))) ];
+    const s = Math.sqrt(Math.max(0, disc));
+    const t1 = (-B - s)/(2*A), t2 = (-B + s)/(2*A);
+    return [ add(L.p, mul(d,t1)), add(L.p, mul(d,t2)) ];
+  }
+
+  function circumcenter(A,B,C){
+    const midAB = mul(add(A,B),0.5), midAC = mul(add(A,C),0.5);
+    const dAB = sub(B,A), dAC = sub(C,A);
+    if (norm(dAB) < EPS || norm(dAC) < EPS) return null;
+    return intersectLines({p: midAB, d: perp(dAB)}, {p: midAC, d: perp(dAC)});
+  }
+
+  function orthocenter(P,M,N){
+    return intersectLines({p: M, d: perp(sub(N,P))}, {p: N, d: perp(sub(M,P))});
+  }
+
+  function circumcircleOf3(A,B,C){
+    const O = circumcenter(A,B,C);
+    if (!O) return null;
+    return {O, r: norm(sub(A,O))};
+  }
+
+  function distancePointToLine(pt, L){
+    return Math.abs(cross(sub(pt, L.p), L.d)) / Math.max(EPS, norm(L.d));
+  }
+
+  function lineCircleIntersectionCount(circle, L, tolDisc){
+    const O = circle.O, r = circle.r;
+    const p = sub(L.p, O), d = L.d;
+    const A = dot(d,d), B = 2*dot(p,d), C = dot(p,p) - r*r;
+    const disc = B*B - 4*A*C;
+    if (disc < -tolDisc) return 0;
+    if (Math.abs(disc) <= tolDisc) return 1;
+    return 2;
+  }
+
+  // ============================================================================
+  // CANVAS SETUP
+  // ============================================================================
+  const tCanvas = document.getElementById('traceCanvas');
+  const mCanvas = document.getElementById('mainCanvas');
+  const tCtx = tCanvas.getContext('2d');
+  const mCtx = mCanvas.getContext('2d');
+  let W = tCanvas.width = mCanvas.width = innerWidth;
+  let H = tCanvas.height = mCanvas.height = innerHeight;
+
+  addEventListener('resize', () => {
+    W = tCanvas.width = mCanvas.width = innerWidth;
+    H = tCanvas.height = mCanvas.height = innerHeight;
+    clearTrace();
+    draw();
+  });
+
+  // ============================================================================
+  // UI ELEMENTS
+  // ============================================================================
+  const status = document.getElementById('status');
+  const sampleCount = document.getElementById('sampleCount');
+  const confidenceMeter = document.getElementById('confidenceMeter');
+  const confidenceText = document.getElementById('confidenceText');
+  const traceStatus = document.getElementById('traceStatus');
+
+  const rO = document.getElementById('rO');
+  const rG = document.getElementById('rG');
+  const tol = document.getElementById('tol');
+  const rOVal = document.getElementById('rOVal');
+  const rGVal = document.getElementById('rGVal');
+  const tolVal = document.getElementById('tolVal');
+
+  const dragBtn = document.getElementById('dragBtn');
+  const traceBtn = document.getElementById('traceBtn');
+  const autoSweepBtn = document.getElementById('autoSweepBtn');
+  const clearTraceBtn = document.getElementById('clearTraceBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  const layerBase = document.getElementById('layerBase');
+  const layerP = document.getElementById('layerP');
+  const layerEF = document.getElementById('layerEF');
+  const layerH = document.getElementById('layerH');
+  const layerCirc = document.getElementById('layerCirc');
+  const layerDiag = document.getElementById('layerDiag');
+
+  // ============================================================================
+  // STATE
+  // ============================================================================
+  const toggles = {
+    drag:false, trace:false, autoSweep:false,
+    base:true, P:true, EF:true, H:true, circ:true, diag:true
+  };
+
+  const state = {
+    M: v(W*0.38, H*0.52),
+    N: v(W*0.62, H*0.52),
+    rOmega: 130,
+    rGamma: 220
+  };
+
+  const proofData = {
+    samples: [],
+    validCount: 0,
+    totalTested: 0
+  };
+
+  let autoSweepInterval = null;
+
+  rO.value = state.rOmega;
+  rG.value = state.rGamma;
+  tol.value = 30;
+
+  function tolPx(){ return Number(tol.value) * 0.02; }
+
+  // ============================================================================
+  // BUTTON HANDLERS
+  // ============================================================================
+  function setBtn(btn, on){ btn.classList.toggle('on', on); }
+
+  function toggle(btn, key, label){
+    toggles[key] = !toggles[key];
+    setBtn(btn, toggles[key]);
+    if (label) btn.textContent = `${label}: ${toggles[key] ? 'ON' : 'OFF'}`;
+    
+    if (key === 'trace') traceStatus.textContent = toggles[key] ? 'ACTIVE' : 'OFF';
+    if (key === 'autoSweep'){
+      if (toggles.autoSweep){
+        startAutoSweep();
+      } else {
+        stopAutoSweep();
+      }
+    }
+    
+    draw();
+  }
+
+  dragBtn.onclick = () => toggle(dragBtn, 'drag', 'Drag');
+  traceBtn.onclick = () => toggle(traceBtn, 'trace', 'Trace');
+  autoSweepBtn.onclick = () => toggle(autoSweepBtn, 'autoSweep', 'Auto-Sweep');
+
+  layerBase.onclick = () => { toggles.base=!toggles.base; setBtn(layerBase,toggles.base); draw(); };
+  layerP.onclick = () => { toggles.P=!toggles.P; setBtn(layerP,toggles.P); draw(); };
+  layerEF.onclick = () => { toggles.EF=!toggles.EF; setBtn(layerEF,toggles.EF); draw(); };
+  layerH.onclick = () => { toggles.H=!toggles.H; setBtn(layerH,toggles.H); draw(); };
+  layerCirc.onclick = () => { toggles.circ=!toggles.circ; setBtn(layerCirc,toggles.circ); draw(); };
+  layerDiag.onclick = () => { toggles.diag=!toggles.diag; setBtn(layerDiag,toggles.diag); draw(); };
+
+  clearTraceBtn.onclick = clearTrace;
+  exportBtn.onclick = exportCSV;
+  resetBtn.onclick = reset;
+
+  rO.oninput = () => {
+    state.rOmega = Number(rO.value);
+    if (state.rGamma <= state.rOmega+3) { state.rGamma = state.rOmega+4; rG.value = state.rGamma; }
+    draw();
+  };
+
+  rG.oninput = () => {
+    state.rGamma = Math.max(Number(rG.value), state.rOmega+4);
+    rG.value = state.rGamma;
+    draw();
+  };
+
+  tol.oninput = () => draw();
+
+  function clearTrace(){
+    tCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    tCtx.fillRect(0, 0, W, H);
+    proofData.samples = [];
+    proofData.validCount = 0;
+    proofData.totalTested = 0;
+    updateStats();
+  }
+
+  function reset(){
+    stopAutoSweep();
+    state.M = v(W*0.38, H*0.52);
+    state.N = v(W*0.62, H*0.52);
+    state.rOmega = 130;
+    state.rGamma = 220;
+    rO.value = state.rOmega;
+    rG.value = state.rGamma;
+    tol.value = 30;
+    clearTrace();
+    draw();
+  }
+
+  function exportCSV(){
+    if (proofData.samples.length === 0){
+      alert('No proof samples collected yet. Enable Trace or Auto-Sweep first.');
+      return;
+    }
+
+    const header = 'sample_id,M_x,M_y,N_x,N_y,r_omega,r_gamma,P_x,P_y,H_x,H_y,circ_O_x,circ_O_y,circ_r,dist_to_line,abs_error,is_tangent\n';
+    const rows = proofData.samples.map((s, i) => 
+      `${i+1},${s.M.x.toFixed(4)},${s.M.y.toFixed(4)},${s.N.x.toFixed(4)},${s.N.y.toFixed(4)},${s.r1.toFixed(4)},${s.r2.toFixed(4)},${s.P.x.toFixed(4)},${s.P.y.toFixed(4)},${s.H.x.toFixed(4)},${s.H.y.toFixed(4)},${s.circO.x.toFixed(4)},${s.circO.y.toFixed(4)},${s.circR.toFixed(4)},${s.dist.toFixed(6)},${s.absErr.toFixed(6)},${s.valid?1:0}`
+    ).join('\n');
+
+    const csv = header + rows;
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `imo2025_p2_proof_samples_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function updateStats(){
+    sampleCount.textContent = proofData.validCount;
+    
+    const confidence = Math.min(100, (proofData.validCount / 100) * 100);
+    confidenceMeter.style.width = `${confidence}%`;
+    
+    if (proofData.validCount === 0){
+      confidenceText.textContent = 'No samples yet';
+    } else if (proofData.validCount < 10){
+      confidenceText.textContent = 'Initial samples';
+    } else if (proofData.validCount < 50){
+      confidenceText.textContent = 'Building confidence...';
+    } else if (proofData.validCount < 100){
+      confidenceText.textContent = 'Strong evidence';
+    } else {
+      confidenceText.textContent = 'Overwhelming evidence';
+    }
+  }
+
+  // ============================================================================
+  // AUTO-SWEEP MODE
+  // ============================================================================
+  function startAutoSweep(){
+    if (autoSweepInterval) return;
+    
+    autoSweepInterval = setInterval(() => {
+      // Randomly perturb configuration
+      const noise = () => (Math.random() - 0.5) * 40;
+      state.M = add(state.M, v(noise(), noise()));
+      state.N = add(state.N, v(noise(), noise()));
+      
+      // Keep in bounds
+      state.M.x = Math.max(100, Math.min(W-100, state.M.x));
+      state.M.y = Math.max(100, Math.min(H-100, state.M.y));
+      state.N.x = Math.max(100, Math.min(W-100, state.N.x));
+      state.N.y = Math.max(100, Math.min(H-100, state.N.y));
+      
+      // Vary radii slightly
+      state.rOmega = Math.max(50, Math.min(280, state.rOmega + (Math.random()-0.5)*15));
+      state.rGamma = Math.max(state.rOmega+4, Math.min(380, state.rGamma + (Math.random()-0.5)*15));
+      
+      rO.value = state.rOmega;
+      rG.value = state.rGamma;
+      
+      draw();
+    }, 150);
+  }
+
+  function stopAutoSweep(){
+    if (autoSweepInterval){
+      clearInterval(autoSweepInterval);
+      autoSweepInterval = null;
+    }
+  }
+
+  // ============================================================================
+  // CONSTRUCTION
+  // ============================================================================
+  function construct(){
+    const M = state.M, N = state.N;
+    const r1 = state.rOmega, r2 = state.rGamma;
+
+    if (r2 <= r1 + 1e-6) return {ok:false, reason:"Need r(Γ) > r(Ω)."};
+    
+    const MN = lineFromPoints(M,N);
+    const dMN = norm(sub(N,M));
+    if (dMN < 2) return {ok:false, reason:"Move M and N apart."};
+
+    const AB = circleCircleIntersections(M, r1, N, r2);
+    if (AB.length < 2) return {ok:false, reason:"Circles must intersect at two points."};
+
+    let A = AB[0], B = AB[1];
+    if (A.y < B.y) { const t=A; A=B; B=t; }
+
+    const d = sub(N,M);
+    const denom = Math.max(EPS, norm2(d));
+    const tAlong = (P)=> dot(sub(P,M), d) / denom;
+
+    const intsOmegaMN = lineCircleIntersections(MN, M, r1);
+    if (intsOmegaMN.length < 2) return {ok:false, reason:"Line MN must meet Ω twice."};
+
+    let C = null;
+    for (const P of intsOmegaMN) if (tAlong(P) < 0) C = P;
+    if (!C) return {ok:false, reason:"Order violation: need C before M."};
+
+    const intsGammaMN = lineCircleIntersections(MN, N, r2);
+    if (intsGammaMN.length < 2) return {ok:false, reason:"Line MN must meet Γ twice."};
+
+    let D = null;
+    for (const P of intsGammaMN) if (tAlong(P) > 1) D = P;
+    if (!D) return {ok:false, reason:"Order violation: need D after N."};
+
+    const P = circumcenter(A,C,D);
+    if (!P) return {ok:false, reason:"△ACD degenerate."};
+
+    const AP = lineFromPoints(A,P);
+
+    const intsAP_Omega = lineCircleIntersections(AP, M, r1);
+    if (intsAP_Omega.length < 2) return {ok:false, reason:"AP must meet Ω again."};
+    let E = intsAP_Omega[0];
+    if (norm(sub(intsAP_Omega[1],A)) > norm(sub(E,A))) E = intsAP_Omega[1];
+
+    const intsAP_Gamma = lineCircleIntersections(AP, N, r2);
+    if (intsAP_Gamma.length < 2) return {ok:false, reason:"AP must meet Γ again."};
+    let F = intsAP_Gamma[0];
+    if (norm(sub(intsAP_Gamma[1],A)) > norm(sub(F,A))) F = intsAP_Gamma[1];
+
+    const H = orthocenter(P,M,N);
+    if (!H) return {ok:false, reason:"△PMN degenerate."};
+
+    const Lpar = {p:H, d: sub(P,A)};
+
+    const circBEF = circumcircleOf3(B,E,F);
+    if (!circBEF) return {ok:false, reason:"△BEF degenerate."};
+
+    const dist = distancePointToLine(circBEF.O, Lpar);
+    const err = dist - circBEF.r;
+    const absErr = Math.abs(err);
+    const tolHere = tolPx();
+
+    const discTol = Math.max(1e-10, tolHere * 50);
+    const count = lineCircleIntersectionCount(circBEF, Lpar, discTol);
+
+    const foot = projectPointToLine(circBEF.O, Lpar).foot;
+
+    const valid = (absErr <= tolHere) && (count === 1);
+
+    return {
+      ok:true, valid,
+      M,N,r1,r2, A,B,C,D, P,E,F, H,
+      MN, AP, Lpar,
+      circBEF,
+      tangency:{dist, err, absErr, tolHere, count, foot}
+    };
+  }
+
+  // ============================================================================
+  // DRAWING
+  // ============================================================================
+  function clear(ctx){
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function strokeCircle(ctx, O,r,color,lw=2,dash=null){
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.arc(O.x,O.y,r,0,Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function strokeLine(ctx, L,color,lw=1,dash=null){
+    const d = unit(L.d);
+    const p1 = add(L.p, mul(d, -5000));
+    const p2 = add(L.p, mul(d,  5000));
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(p1.x,p1.y);
+    ctx.lineTo(p2.x,p2.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function seg(ctx, a,b,color,lw=1.5,dash=null){
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(a.x,a.y);
+    ctx.lineTo(b.x,b.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function point(ctx, P, fill, label, r=5.2){
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(P.x,P.y,r+3,0,Math.PI*2);
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(P.x,P.y,r,0,Math.PI*2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText(label, P.x+8, P.y-8);
+    ctx.restore();
+  }
+
+  function banner(lines){
+    status.textContent = lines.join("\n");
+  }
+
+  function css(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function draw(){
+    rOVal.textContent = `${state.rOmega.toFixed(0)} px`;
+    rGVal.textContent = `${state.rGamma.toFixed(0)} px`;
+    tolVal.textContent = `${tolPx().toFixed(2)} px`;
+
+    clear(mCtx);
+
+    const C = construct();
+
+    // Always show circles
+    strokeCircle(mCtx, state.M, state.rOmega, css('--cyan'), 2.3);
+    strokeCircle(mCtx, state.N, state.rGamma, css('--mag'), 2.3);
+    point(mCtx, state.M, css('--cyan'), "M", 7.2);
+    point(mCtx, state.N, css('--mag'), "N", 7.2);
+
+    if (!C.ok){
+      const MN = lineFromPoints(state.M, state.N);
+      strokeLine(mCtx, MN, "rgba(255,255,255,.3)", 1, [6,6]);
+      banner([
+        `STATUS: INVALID CONFIGURATION`,
+        `Reason: ${C.reason}`,
+        ``,
+        `Adjust M, N, or radii to satisfy constraints.`
+      ]);
+      return;
+    }
+
+    // Record sample if tracing or auto-sweeping
+    if ((toggles.trace || toggles.autoSweep) && C.valid){
+      proofData.samples.push({
+        M: {x:C.M.x, y:C.M.y},
+        N: {x:C.N.x, y:C.N.y},
+        r1: C.r1, r2: C.r2,
+        P: {x:C.P.x, y:C.P.y},
+        H: {x:C.H.x, y:C.H.y},
+        circO: {x:C.circBEF.O.x, y:C.circBEF.O.y},
+        circR: C.circBEF.r,
+        dist: C.tangency.dist,
+        absErr: C.tangency.absErr,
+        valid: true
+      });
+      proofData.validCount++;
+      updateStats();
+    }
+
+    proofData.totalTested++;
+
+    // Draw trace elements
+    if (toggles.trace && dragging){
+      // Trace the parallel line
+      strokeLine(tCtx, C.Lpar, css('--trace'), 1.5);
+      // Trace P
+      tCtx.fillStyle = css('--trace-pt');
+      tCtx.beginPath();
+      tCtx.arc(C.P.x, C.P.y, 2, 0, Math.PI*2);
+      tCtx.fill();
+    }
+
+    // Draw geometry
+    if (toggles.base){
+      strokeLine(mCtx, C.MN, "rgba(255,255,255,.35)", 1, [6,6]);
+      point(mCtx, C.A, css('--white'), "A");
+      point(mCtx, C.B, css('--white'), "B");
+      point(mCtx, C.C, css('--gold'), "C");
+      point(mCtx, C.D, css('--gold'), "D");
+    }
+
+    if (toggles.P){
+      seg(mCtx, C.A, C.C, "rgba(255,211,77,.28)", 1.6);
+      seg(mCtx, C.C, C.D, "rgba(255,211,77,.28)", 1.6);
+      seg(mCtx, C.D, C.A, "rgba(255,211,77,.28)", 1.6);
+      point(mCtx, C.P, css('--gold'), "P", 7.2);
+      strokeLine(mCtx, C.AP, "rgba(0,240,255,.62)", 2.6);
+    }
+
+    if (toggles.EF){
+      point(mCtx, C.E, css('--lime'), "E");
+      point(mCtx, C.F, css('--rose'), "F");
+    }
+
+    if (toggles.H){
+      point(mCtx, C.H, css('--vio'), "H", 7.2);
+      strokeLine(mCtx, C.Lpar, css('--tangent'), 3.2);
+    }
+
+    if (toggles.circ){
+      strokeCircle(mCtx, C.circBEF.O, C.circBEF.r, "rgba(255,255,255,.72)", 2.0);
+      point(mCtx, C.circBEF.O, "rgba(255,255,255,.85)", "O₍BEF₎", 4.8);
+    }
+
+    const badge = C.valid ? "[TANGENT ✔]" : "[NOT TANGENT]";
+    const colorBadge = C.valid ? css('--ok') : css('--bad');
+
+    banner([
+      `CONFIG: VALID`,
+      ``,
+      `Tangency test: line through H ∥ AP vs circumcircle(BEF)`,
+      `- d(O₍BEF₎, line) = ${C.tangency.dist.toFixed(6)} px`,
+      `- radius          = ${C.circBEF.r.toFixed(6)} px`,
+      `- |d - r|          = ${C.tangency.absErr.toFixed(6)} px`,
+      `- tolerance        = ${C.tangency.tolHere.toFixed(2)} px`,
+      `- intersection ≈   ${C.tangency.count}`,
+      ``,
+      `${badge}`,
+      ``,
+      `Valid samples: ${proofData.validCount} / ${proofData.totalTested} tested`
+    ]);
+
+    if (toggles.diag){
+      seg(mCtx, C.circBEF.O, C.tangency.foot, 
+          C.valid ? "rgba(61,255,155,.55)" : "rgba(255,107,107,.55)", 2, [6,6]);
+      point(mCtx, C.tangency.foot, 
+            C.valid ? "rgba(61,255,155,.9)" : "rgba(255,107,107,.9)", "⊥", 4.6);
+
+      // Tangent point on circle
+      const n = unit(perp(C.Lpar.d));
+      const sign = (dot(sub(C.circBEF.O, C.tangency.foot), n) >= 0) ? 1 : -1;
+      const T = sub(C.circBEF.O, mul(n, sign * C.circBEF.r));
+      point(mCtx, T, colorBadge, "T", 4.8);
+
+      mCtx.save();
+      mCtx.beginPath();
+      mCtx.arc(T.x,T.y,10,0,Math.PI*2);
+      mCtx.strokeStyle = C.valid ? "rgba(61,255,155,.25)" : "rgba(255,107,107,.25)";
+      mCtx.lineWidth = 3;
+      mCtx.stroke();
+      mCtx.restore();
+    }
+  }
+
+  // ============================================================================
+  // INTERACTION
+  // ============================================================================
+  let dragging = null;
+
+  function hit(pt, x, y, R=14){
+    return Math.hypot(pt.x-x, pt.y-y) <= R;
+  }
+
+  mCanvas.addEventListener('pointerdown', (e) => {
+    if (!toggles.drag) return;
+    const x = e.clientX, y = e.clientY;
+    if (hit(state.M, x, y)) dragging = 'M';
+    else if (hit(state.N, x, y)) dragging = 'N';
+  });
+
+  mCanvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const x = e.clientX, y = e.clientY;
+    if (dragging === 'M') state.M = v(x,y);
+    if (dragging === 'N') state.N = v(x,y);
+    draw();
+  });
+
+  mCanvas.addEventListener('pointerup', () => dragging = null);
+  mCanvas.addEventListener('pointercancel', () => dragging = null);
+
+  // Keyboard
+  addEventListener('keydown', (e) => {
+    if (e.key === 'd' || e.key === 'D') toggle(dragBtn,'drag','Drag');
+    if (e.key === 't' || e.key === 'T') toggle(traceBtn,'trace','Trace');
+    if (e.key === 'a' || e.key === 'A') toggle(autoSweepBtn,'autoSweep','Auto-Sweep');
+    if (e.key === 'r' || e.key === 'R') reset();
+    if (e.key === ' ') { e.preventDefault(); clearTrace(); draw(); }
+  });
+
+  // ============================================================================
+  // INIT
+  // ============================================================================
+  clear(tCtx);
+  updateStats();
+  draw();
+})();
+</script>
+</body>
+</html>
