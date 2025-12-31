@@ -68,3 +68,5 @@ Jennifer Leigh West
 6. In the commit message box, type:
 ```
 Add comprehensive README
+
+See ORIGIN.md for authorship, provenance, and licensing context.
